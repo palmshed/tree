@@ -1,5 +1,7 @@
 # Tree
 
+![Tree](https://raw.githubusercontent.com/palmshed/tree/main/.github/assets/tree.png)
+
 *A quiet, self-hosted Git hosting platform.*
 
 > **Status Notice**: Tree is an experimental, self-hosted Git hosting platform under active development. Phase 0, Phase 1 and Phase 2 are implemented, tested and verified with a production-oriented CI foundation. Tree is not yet intended as a full replacement for existing large-scale forge platforms.
