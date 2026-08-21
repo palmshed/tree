@@ -1,12 +1,12 @@
 # Tree: Living Engineering Record
 
-> **Notice**: Tree is an experimental, self-hosted Git hosting platform. Phase 0 and Phase 1 are currently implemented and verified. Tree is not yet production-ready or intended as a full replacement for existing large-scale forge platforms.
+> **Notice**: Tree is an experimental, self-hosted Git hosting platform. Phase 0, Phase 1 and Phase 2 are implemented and verified with CI foundation (21/21). Tree is not yet production-ready or intended as a full replacement for existing large-scale forge platforms.
 > 
 > **Canonical Repository**: [https://github.com/palmshed/tree](https://github.com/palmshed/tree)  
 > **Initial Release Commit**: `49c1e4f87cc87d02fbfe8dbfeea5f7a139b2b4ce`  
 > **Public GitHub Gist**: [https://gist.github.com/bniladridas/121f0d2f10f6900faf3ffab455be757f](https://gist.github.com/bniladridas/121f0d2f10f6900faf3ffab455be757f)  
 > **Gist Filename**: `tree-engineering-gist.md`  
-> **Status**: Phase 0 & Phase 1 Implemented & Verified (15/15 Tests Passing)  
+> **Status**: Phase 0, Phase 1 and Phase 2 Implemented and Verified (21/21 Tests Passing)  
 > **Target Audience**: Systems Engineers, Technical Portfolios, Scholarship & Architecture Reviewers  
 
 ---
@@ -390,7 +390,7 @@ services:
 env:
   DATABASE_URL: postgres://tree:treepassword@localhost:5432/tree_db
 steps:
-  - actions/checkout@v4
+  - actions/checkout@v7
   - dtolnay/rust-toolchain@stable (rustfmt, clippy) + Swatinem/rust-cache@v2
   - cargo fmt --all -- --check
   - cargo clippy --workspace --all-targets -- -D warnings
@@ -402,9 +402,9 @@ Verified baseline from a fresh checkout (with `DATABASE_URL` pointed at the serv
 
 ### 14.3 `security.yml` Detail
 
-- **`cargo audit` job**: `taiki-e/install-action` installs `cargo-audit` pinned to the latest release, then `cargo audit` checks `Cargo.lock` against the RustSec advisory DB. Fails the PR on any `high`/`critical` advisory.
+- **`cargo audit` job**: `taiki-e/install-action` installs `cargo-audit` pinned to the latest release, then `cargo audit` checks `Cargo.lock` against the RustSec advisory DB. Fails the PR on any `high`/`critical` advisory. `RUSTSEC-2023-0071` for `rsa 0.9.10` via `sqlx` is ignored in `.cargo/audit.toml` (no fixed upgrade, medium).
 - **`CodeQL` job**: `github/codeql-action/{init,autobuild,analyze}` with `languages: rust`, `queries: security-and-quality`. Results surface under `Security → Code scanning`. Permissions are minimal (`security-events: write`).
-- **Dependency freshness**: `.github/dependabot.yml` opens weekly PRs for `cargo` and `github-actions` (labels `dependencies`). This is the non-noisy, GitHub-native update check, no `cargo outdated` CI noise for a Rust/TS repo.
+- **Dependency freshness**: `.github/dependabot.yml` opens weekly PRs for `cargo` and `github-actions` (labels `dependencies`). This is the non-noisy, GitHub-native update check, no `cargo outdated` CI noise for a Rust/TS repo. Major Rust bumps for `rand`, `axum`, `tower-http`, `thiserror` and `reqwest` are pinned to patch and minor only.
 - **Secret scanning**: GitHub's secret scanning + push protection are **repository settings**, not workflow YAML (documented here for completeness). Enable at `Settings → Code security → Secret scanning / Push protection`. No custom regex checks are added, avoids noise that does not apply to this Rust/TypeScript codebase.
 
 ### 14.4 `release.yml` Detail: `commit → build → package → release`
