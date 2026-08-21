@@ -478,22 +478,21 @@ Per the brief: no complex CD, no self-hosted runner fleet, no deployment to stag
 
 ### 14.7 Local Verification Status (2026-08-21, pre-push)
 
-CI/CD foundation is **complete locally** and **not yet part of `palmshed/tree`** because the changes have not been pushed. Local clean-runner equivalent verification on this darwin host:
+CI/CD foundation was completed locally and then independently verified on the clean runner.
+
+**Local clean-runner equivalent (darwin, pre-push):**
 
 * `cargo fmt --all -- --check`: pass
 * `cargo clippy --workspace --all-targets -- -D warnings`: pass (0 warnings after fixing `redundant_closure`, `unnecessary_sort_by`, `print_literal`)
 * `cargo test --workspace --locked` with `DATABASE_URL=postgres://bniladridas@/tree_db?host=/tmp` (PostgreSQL 16 Homebrew, same major as CI service `postgres:16`): **21/21 passed** (4 `tree-core` + 4 `tree-git` + 6 `test_auth_enforcement` + 2 `test_concurrency` + 1 `test_permissions` + 1 `test_postgres_storage` + 2 `test_repo_lifecycle` + 1 `test_smart_http_git`; original 15/15 intact, 6 additive). `git diff --check` clean, no secrets committed (only `treepassword` test fixture in compose/workflows, no tokens/`.env`/certs), workflow YAML validates with `ruby -ryaml`.
 * `cargo build --release --locked`: pass
-* `docker` not available on this darwin runner, so BuildKit build and `/health` container verification is **deferred to the GitHub Actions clean runner** as designed in `release.yml` (load, curl `/health` 30s, then push with provenance and SBOM). This defers the final production-ready claim until the container is actually started and verified.
+* `docker` not available on this darwin runner, so BuildKit build and `/health` container verification was deferred to the GitHub Actions clean runner as designed in `release.yml`.
 
-Next step is a single clean commit and push:
+**Clean runner verification (GitHub Actions):**
 
-```
-ci: add GitHub Actions and BuildKit release pipeline
-```
+* Commit `b9c5f24 docs: sync README and architecture to Phase 2 and 21/21` pushed to `palmshed/tree` `main`.
+* Run `32521753670` (`CI`, `main`, `push`): `verify` job on `ubuntu-latest` with `postgres:16` service. All steps green in `4m29s`: `Check formatting` pass, `Clippy (deny warnings)` pass, `Run tests` pass, `Release build` pass (`finished release profile in 1m58s`). Previous run `32521626413` was canceled by `concurrency: cancel-in-progress` when the docs fix was pushed immediately after, which is intended. The passing run `32521753670` is the evidence:
 
-Once pushed, the real milestone is independent verification:
+> `palmshed/tree` → GitHub Actions → clean `ubuntu-latest` runner → PostgreSQL 16 service → `21/21` → release build → BuildKit container verification on next `v*.*.*` tag → `ghcr.io/palmshed/tree`
 
-> `palmshed/tree` → GitHub Actions → clean `ubuntu-latest` runner → PostgreSQL 16 service → `21/21` → release build → BuildKit container verification → `ghcr.io/palmshed/tree`
-
-That result, not the local run, is the evidence to be recorded here.
+CI/CD foundation is now verified both locally and on the clean runner. Docker BuildKit verification will occur on the next `v*.*.*` tag via `release.yml` (`load`, `curl /health` 30s, then `push` with provenance and SBOM).
