@@ -2500,7 +2500,7 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "uuid",
 ]
 
@@ -2515,7 +2515,7 @@ dependencies = [
  "futures-util",
  "regex",
  "tempfile",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "tree-core",
@@ -2573,7 +2573,7 @@ dependencies = [
  "chrono",
  "parking_lot",
  "sqlx",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tracing",
  "tree-core",
