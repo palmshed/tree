@@ -1,12 +1,13 @@
 # Tree: Living Engineering Record
 
-> **Notice**: Tree is an experimental, self-hosted Git hosting platform. Phase 0 and Phase 1 are currently implemented and verified.
+> **Notice**: Tree is an experimental, self-hosted Git hosting platform. Phase 0 and Phase 1 are currently implemented and verified. Tree is not yet production-ready or intended as a full replacement for existing large-scale forge platforms.
 > 
-> **Author**: Tree Engineering Team  
-> **Repository**: [https://github.com/tree-vcs/tree](https://github.com/tree-vcs/tree)  
-> **Gist Record**: `tree-engineering-gist.md`  
+> **Canonical Repository**: [https://github.com/palmshed/tree](https://github.com/palmshed/tree)  
+> **Initial Release Commit**: `49c1e4f87cc87d02fbfe8dbfeea5f7a139b2b4ce`  
+> **Public GitHub Gist**: [https://gist.github.com/bniladridas/121f0d2f10f6900faf3ffab455be757f](https://gist.github.com/bniladridas/121f0d2f10f6900faf3ffab455be757f)  
+> **Gist Filename**: `tree-engineering-gist.md`  
 > **Status**: Phase 0 & Phase 1 Implemented & Verified (15/15 Tests Passing)  
-> **Target Audience**: Systems Engineers, Reviewers, Technical Portfolios, and Architecture Evaluators  
+> **Target Audience**: Systems Engineers, Technical Portfolios, Scholarship & Architecture Reviewers  
 
 ---
 
@@ -163,6 +164,7 @@ CREATE TABLE repository_permissions (
 ## 4. Implementation Log
 
 ### Milestone 0: Workspace Layout & Core Architecture
+- **Commit**: `49c1e4f87cc87d02fbfe8dbfeea5f7a139b2b4ce`
 - **Problem**: Establish a clean, modular repository layout conforming to project standards.
 - **Approach**: Set up a Cargo virtual workspace comprising `crates/tree-core`, `crates/tree-git`, `crates/tree-storage`, `apps/tree-server`, `apps/tree-cli`, and `tests`.
 - **Implementation**: Written domain models, permission evaluator, errors, `ServerConfig`, and SQL migration schemas.
@@ -170,6 +172,7 @@ CREATE TABLE repository_permissions (
 - **Result**: Core domain compiled with zero warnings and verified deterministic access evaluation.
 
 ### Milestone 1: Git Smart HTTP Engine & End-to-End Verification
+- **Commit**: `49c1e4f87cc87d02fbfe8dbfeea5f7a139b2b4ce`
 - **Problem**: Enable standard Git clients to clone, push, and fetch from bare repositories hosted on Tree, persisting metadata to PostgreSQL.
 - **Approach**: Implement `SmartHttpHandler` with `pkt-line` framing, async standard I/O streaming to `git upload-pack` and `git receive-pack`, and Axum HTTP routes.
 - **Implementation**: Created `git_http.rs`, `api.rs`, `engine.rs`, `refs.rs`, `postgres.rs`, and CLI tool `tree`.
@@ -186,22 +189,30 @@ CREATE TABLE repository_permissions (
 
 ---
 
-## 5. Experiments
+## 5. Experiments & Measurements
 
-### Experiment 1: Concurrent Repository Lifecycle
-- **Test Setup**: 20 concurrent Tokio tasks issuing `POST /repositories` followed by 50 concurrent tasks reading `GET /repositories/:owner/:name`.
-- **Hardware/Environment**: Apple Silicon M-series (macOS Darwin 25.6), PostgreSQL 16.15.
-- **Results**:
-  - 20 repositories created on disk and in database in 1.29s (64.5ms per repo creation including bare `git init` and SQL writes).
+### Test Environment Specification
+- **Hardware**: Apple Silicon (M-series aarch64, 10 CPU cores, 16 GB Unified Memory)
+- **Host OS**: macOS Darwin 25.6.0 (Apple Clang 21.0.0)
+- **Rust Toolchain**: `rustc 1.80+ / stable-aarch64-apple-darwin`
+- **Database Engine**: PostgreSQL 16.15 (Homebrew)
+- **Git Version**: `git version 2.50.1 (Apple Git-155)`
+
+### Experiment 1: High Concurrency Repository Lifecycle
+- **Command**: `cargo test --test test_concurrency -- --nocapture`
+- **Setup**: 20 concurrent Tokio tasks issuing `POST /repositories` followed by 50 concurrent tasks reading `GET /repositories/:owner/:name`.
+- **Measurement**:
+  - 20 repositories created on disk + PostgreSQL in **1.29 seconds** (~64.5ms per repo including `git init --bare` and SQL transaction).
   - 50 concurrent reads completed with 0 errors and 100% data consistency.
   - Zero filesystem race conditions or Postgres lock contention.
 
-### Experiment 2: Packfile Transfer & Verification
-- **Test Setup**: Full lifecycle clone of an empty repository, single commit creation, push over HTTP, and second independent clone.
-- **Results**:
+### Experiment 2: Git Smart HTTP Packfile Streaming
+- **Command**: `cargo test --test test_smart_http_git -- --nocapture`
+- **Setup**: Full end-to-end Git workflow (empty clone -> commit -> push -> second clone).
+- **Measurement**:
   - Empty repository advertisement: `001e# service=git-upload-pack\n0000...` processed immediately without client hanging.
   - Push RPC (`receive-pack`): 50 bytes payload response, Git exit code 0.
-  - Second clone RPC (`upload-pack`): 239 bytes packfile transferred in 110ms. Content integrity verified bit-for-bit.
+  - Second clone RPC (`upload-pack`): 239 bytes packfile transferred in 110ms with exact bit-for-bit file verification.
 
 ---
 
@@ -236,7 +247,11 @@ CREATE TABLE repository_permissions (
 ## 8. Testing
 
 ### Concrete Test Results
-**15/15 tests passing (100% pass rate)**
+**15/15 automated tests passing (100% pass rate)**
+
+```bash
+cargo test --workspace
+```
 
 | Test Name | Suite | Target | Status | Duration |
 | :--- | :--- | :--- | :--- | :--- |
@@ -258,17 +273,26 @@ CREATE TABLE repository_permissions (
 
 ---
 
-## 9. Benchmarks
+## 9. Benchmarks & Performance Profile
 
-- **Environment**: macOS Darwin (Apple Silicon aarch64), PostgreSQL 16.15, Rust 1.80.
-- **REST Repository Creation**: 15.5ms median latency.
-- **Ref Discovery (`info/refs`)**: 6.2ms median latency.
+- **REST Repository Creation Latency**: 15.5ms median latency (PostgreSQL record write + `git init --bare` on SSD).
+- **Ref Discovery (`info/refs`) Latency**: 6.2ms median latency.
 - **Commit History Parsing (100 commits)**: 4.8ms median latency.
-- **Binary Size**: `tree-server` release binary: ~14MB. Memory footprint under idle load: ~18MB RSS.
+- **Binary Footprint**: `tree-server` release binary: ~14MB. Memory usage under idle load: ~18MB RSS.
 
 ---
 
-## 10. Roadmap
+## 10. Known Limitations
+
+As an experimental Phase 0/1 implementation, the following boundaries exist:
+1. **HTTP Transport Only**: SSH daemon transport is not yet included (planned for Phase 2/3).
+2. **Basic Auth Only**: OAuth2, SSH public keys, and personal access token scopes are not yet implemented.
+3. **No Quota Enforcement**: Storage quotas per user/repository are not yet enforced at the filesystem level.
+4. **Single-Node Storage**: Bare repositories must reside on a POSIX-compliant filesystem mounted locally.
+
+---
+
+## 11. Roadmap
 
 ### Completed (Phase 0 & Phase 1)
 - [x] Bare Git repository lifecycle management.
@@ -279,22 +303,26 @@ CREATE TABLE repository_permissions (
 - [x] Minimal, quiet TypeScript web explorer with dark aesthetic.
 - [x] End-to-end automated integration and concurrency test suites.
 
-### Currently Working
-- [ ] SSH transport daemon architecture (`tree-ssh` using `russh`).
+### Next: Phase 2: Trust & Boundary Enforcement
+- [ ] Transport-level authentication & token scoping.
+- [ ] Disk quota monitoring and storage limits.
+- [ ] Rate limiting on API and Git transport endpoints.
+- [ ] Structured audit logging for write/delete actions.
+- [ ] Crash recovery routines for interrupted pack transfers.
 
-### Planned (Phase 2 & Phase 3)
+### Planned (Phase 3 & Beyond)
+- [ ] SSH transport daemon architecture (`tree-ssh` using `russh`).
 - [ ] SSH public key management in PostgreSQL.
 - [ ] Webhook dispatcher with retry queues.
 - [ ] Ephemeral archive generation (`.tar.gz` and `.zip` download endpoints).
-- [ ] Read-only repository mirroring.
 
 ### Deliberately Postponed
-- [ ] Pull requests and issue tracking (maintaining quiet focus on repository engine).
+- [ ] Pull requests and issue tracking (preserving focus on core repository engine).
 - [ ] CI/CD execution pipeline.
 
 ---
 
-## 11. Lessons
+## 12. Lessons
 
 1. **Subprocess Isolation**: Standard Git RPC commands (`git upload-pack --stateless-rpc`) are remarkably efficient when standard I/O streams are handled asynchronously without intermediate buffering on disk.
 2. **Separation of Storage Concerns**: Keeping repository metadata in PostgreSQL and repository object packs on POSIX filesystem yields the simplest, fastest, and most resilient architecture.
@@ -302,8 +330,9 @@ CREATE TABLE repository_permissions (
 
 ---
 
-## 12. References
- 
+## 13. References
+
+- **Canonical GitHub Repository**: [palmshed/tree](https://github.com/palmshed/tree)
 - **Public GitHub Gist**: [Tree: Living Engineering Record (`tree-engineering-gist.md`)](https://gist.github.com/bniladridas/121f0d2f10f6900faf3ffab455be757f)
 - **Architecture Document**: [docs/architecture.md](architecture.md)
 - **API Documentation**: [docs/api.md](api.md)
