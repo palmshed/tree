@@ -12,8 +12,8 @@ Thank you for your interest in contributing to Tree! Tree is a quiet, lightweigh
 
 ### Prerequisites
 
-- **Rust**: 1.80+ (`rustup toolchain install stable`)
-- **PostgreSQL**: 15+ (or Docker)
+- **Rust**: stable (`rustup toolchain install stable`, tested with `1.98`)
+- **PostgreSQL**: 16+ (or Docker `postgres:16`)
 - **Node.js**: 20+ and `npm`
 - **Git**: 2.30+
 
@@ -31,18 +31,24 @@ cargo run -p tree-server -- migrate
 ### Running Tests
 
 ```bash
-cargo test --all-targets --all-features
+# Format and lint must pass
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+
+# Tests require a real PostgreSQL 16 (CI uses postgres:16 service)
+DATABASE_URL="postgres://tree:treepassword@localhost:5432/tree_db" cargo test --workspace --locked
 ```
 
 ### Building the Project
 
 ```bash
-cargo build --workspace
+cargo build --workspace --locked
+cargo build --release --locked
 ```
 
 ## Pull Request Process
 
 1. Fork the repository and create your branch from `main`.
-2. Ensure all tests pass (`cargo test`).
+2. Ensure `cargo fmt`, `cargo clippy -D warnings` and `cargo test --workspace` (21/21 with PostgreSQL 16) all pass.
 3. Maintain documentation and update the engineering log for major changes.
 4. Open a clear, concise Pull Request.

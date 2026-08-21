@@ -99,5 +99,5 @@ Tree implements the official Git Smart HTTP protocol specification:
 ## 5. Security & Isolation Model
 
 - **Filesystem Isolation**: Owner and repository names are sanitized (`GitEngine::sanitize_name`). Names cannot contain `..`, `/`, `\`, null bytes, or illegal shell characters, preventing path traversal outside the repository base directory.
-- **Authentication**: HTTP Basic Authentication verifies password hashes using SHA-256 + salt (or argon2).
+- **Authentication**: HTTP Basic Authentication verifies Argon2id hashes with per-password random salt (single source in `crates/tree-core/src/auth.rs`). Empty placeholders and legacy digests fail closed.
 - **Authorization**: Granular RBAC permissions with four roles (`Read`, `Write`, `Admin`, `Owner`). Anonymous read access is allowed only for repositories explicitly flagged `is_private = false`.

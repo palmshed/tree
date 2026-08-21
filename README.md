@@ -2,7 +2,7 @@
 
 *A quiet, self-hosted Git hosting platform.*
 
-> **Status Notice**: Tree is an experimental, self-hosted Git hosting platform under active development. Phase 0 and Phase 1 are currently implemented, tested, and verified. Tree is not yet intended as a full replacement for existing large-scale forge platforms.
+> **Status Notice**: Tree is an experimental, self-hosted Git hosting platform under active development. Phase 0, Phase 1 and Phase 2 are implemented, tested and verified with a production-oriented CI foundation. Tree is not yet intended as a full replacement for existing large-scale forge platforms.
 
 ---
 
@@ -15,23 +15,25 @@
 
 ---
 
-## Current Status (Phase 0 & Phase 1)
+## Current Status (Phase 0, Phase 1 and Phase 2)
 
 Tree focuses on the core Git repository engine: native transport, metadata management, and unbloated interfaces.
 
-- **Phase 0 (Repository & Structure)**: Modular Rust virtual workspace, clean domain interfaces, database migrations, and Docker configurations.
-- **Phase 1 (Git Foundation & Metadata)**: Native Git Smart HTTP transport (`clone`, `fetch`, `push`), bare Git filesystem management, PostgreSQL metadata persistence, RBAC permission evaluator, paginated commit/branch/tag/tree inspection, and a developer CLI.
+- **Phase 0 (Repository and Structure)**: Modular Rust virtual workspace, clean domain interfaces, database migrations, and Docker configurations.
+- **Phase 1 (Git Foundation and Metadata)**: Native Git Smart HTTP transport (`clone`, `fetch`, `push`), bare Git filesystem management, PostgreSQL metadata persistence, RBAC permission evaluator, paginated commit/branch/tag/tree inspection, and a developer CLI.
+- **Phase 2 (Trust and Boundary plus External Infrastructure)**: Argon2id password hashing with per-password random salt, request body limit and timeout at the HTTP boundary, structured audit logging for pushes and permission denials, six transport auth boundary tests, and a minimal GitHub Actions foundation (`ci.yml`, `security.yml`, `release.yml`) with BuildKit builds to `ghcr.io`.
 
 ---
 
 ## Technology Stack
 
-- **Core & Backend Daemon**: Rust 1.80+ (Axum, Tokio, sqlx, clap)
+- **Core and Backend Daemon**: Rust stable (Axum, Tokio, sqlx, clap) - `rust:1-bookworm` builder, `1.98` locally
 - **Metadata Storage**: PostgreSQL 16+ (relational schemas, ACID guarantees)
-- **Git Engine**: Bare Git storage + Git Smart HTTP protocol (`pkt-line`, stateless RPC subprocess streaming)
-- **Web Interface**: TypeScript + quiet minimalist HTML/CSS
-- **Containerization**: Multi-stage Docker & Docker Compose
-- **Target OS**: Linux-first (macOS compatible)
+- **Git Engine**: Bare Git storage plus Git Smart HTTP protocol (`pkt-line`, stateless RPC subprocess streaming)
+- **Web Interface**: TypeScript plus quiet minimalist HTML/CSS
+- **Containerization**: Multi-stage Docker with BuildKit and Docker Compose
+- **CI and Supply Chain**: GitHub Actions, `cargo audit` and CodeQL, Dependabot, GHCR with provenance and SBOM
+- **Target OS**: Linux first (macOS compatible)
 
 ---
 
@@ -77,7 +79,7 @@ tree/
 │   ├── tree-server/       # Axum HTTP service (REST API, Git Smart HTTP, Web UI)
 │   └── tree-cli/          # Developer CLI tool (`tree`)
 ├── crates/
-│   ├── tree-core/         # Domain models, RBAC evaluator, Store traits, errors
+│   ├── tree-core/         # Domain models, RBAC evaluator, Store traits, errors, auth
 │   ├── tree-git/          # Bare storage management, Smart HTTP framing, Git inspectors
 │   └── tree-storage/      # PostgreSQL store (sqlx), migrations, test MemoryStore
 ├── web/                   # Minimal TypeScript web frontend
@@ -85,6 +87,7 @@ tree/
 ├── tests/                 # End-to-end integration and concurrency test suites
 ├── docs/                  # Architecture specifications and living engineering gist
 ├── docker/                # Multi-stage Dockerfile and docker-compose setup
+├── .github/workflows/     # CI, security and release workflows (BuildKit to GHCR)
 ├── Cargo.toml             # Virtual workspace configuration
 ├── README.md
 ├── LICENSE                # Apache 2.0
@@ -95,60 +98,71 @@ tree/
 
 ## Test Results
 
-**15/15 automated tests passing (100% pass rate)**:
+**21/21 automated tests passing (100 percent pass rate)**:
+`cargo test --workspace --locked` with `DATABASE_URL` pointing at PostgreSQL 16 (CI uses `postgres:16` service, local uses Homebrew `postgres@16`):
 
 ```text
-running 15 tests
-test permissions::tests::test_public_repo_anonymous_read ... ok
-test permissions::tests::test_owner_full_access ... ok
-test permissions::tests::test_private_repo_anonymous_denied ... ok
-test permissions::tests::test_member_role_permissions ... ok
-test engine::tests::test_sanitize_name ... ok
-test smart_http::tests::test_pkt_line_formatting ... ok
-test smart_http::tests::test_advertise_refs_empty_repo ... ok
-test engine::tests::test_init_and_delete_repo ... ok
-test test_concurrency::test_concurrent_repository_creation ... ok
-test test_concurrency::test_concurrent_reads_and_writes ... ok
-test test_permissions::test_permissions_matrix ... ok
-test test_postgres_storage::test_postgres_store_integration ... ok
-test test_repo_lifecycle::test_invalid_repository_names ... ok
-test test_repo_lifecycle::test_repository_lifecycle ... ok
-test test_smart_http_git::test_git_end_to_end_smart_http ... ok
+running 4 tests  (tree-core)           - permission engine, RBAC
+running 4 tests  (tree-git)            - sanitize_name, pkt_line, advertise_refs, init/delete
+running 6 tests  (test_auth_enforcement) - anonymous push rejected, anonymous private read 401, wrong password 401, read-only member 403, authenticated write succeeds, cross-user isolation 403
+running 2 tests  (test_concurrency)    - concurrent repository creation, concurrent reads and writes
+running 1 test   (test_permissions)    - permissions matrix
+running 1 test   (test_postgres_storage) - PostgreSQL store integration
+running 2 tests  (test_repo_lifecycle) - invalid names, repository lifecycle
+running 1 test   (test_smart_http_git) - Git Smart HTTP end-to-end
 
-test result: ok. 15 passed; 0 failed; 0 ignored; finished in 3.27s
+test result: ok. 21 passed; 0 failed; 0 ignored
 ```
+
+Original 15/15 suite remains intact, six additive auth boundary tests were added in Phase 2.
 
 ---
 
-## Development & Usage Instructions
+## Development and Usage Instructions
 
 ### 1. Prerequisites
 
-- Rust 1.80+ (`rustup toolchain install stable`)
-- PostgreSQL 15+ (or Docker)
+- Rust stable (`rustup toolchain install stable`, tested with `1.98`)
+- PostgreSQL 16+ (or Docker `postgres:16`)
 - Git 2.30+
 - Node.js 20+
 
-### 2. Run Database Migrations & Start Server
+### 2. Run Database Migrations and Start Server
 
 ```bash
-# Start PostgreSQL database
+# Start PostgreSQL database (Homebrew)
+brew services start postgresql@16
 createdb tree_db
 
+# Or via Docker
+docker compose -f docker/docker-compose.yml up -d postgres
+
 # Build workspace binaries
-cargo build --release
+cargo build --release --locked
 
 # Run server with PostgreSQL
-DATABASE_URL="postgres://localhost/tree_db" \
+DATABASE_URL="postgres://tree:treepassword@localhost:5432/tree_db" \
 TREE_DATA_DIR="./data/git" \
+cargo run -p tree-server
+
+# Without DATABASE_URL, tree-server falls back to MemoryStore for local testing
 cargo run -p tree-server
 ```
 
-### 3. End-to-End Workflow Verification
+### 3. Verify Exactly as CI Does
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+DATABASE_URL="postgres://tree:treepassword@localhost:5432/tree_db" cargo test --workspace --locked
+cargo build --release --locked
+```
+
+### 4. End-to-End Workflow Verification
 
 ```bash
 # 1. Create repository via CLI
-cargo run -p tree-cli -- create my-project --owner user
+cargo run -p tree -- create my-project --owner user
 
 # 2. Clone repository
 git clone http://localhost:8080/user/my-project.git
@@ -167,14 +181,33 @@ cat verify-project/README.md
 # Output: hello
 ```
 
+### 5. Container Build (BuildKit)
+
+```bash
+docker buildx build -f docker/Dockerfile.server -t ghcr.io/palmshed/tree:local --load .
+docker run -d -p 8080:8080 --name tree ghcr.io/palmshed/tree:local
+curl -fsS http://localhost:8080/health
+docker rm -f tree
+```
+
+---
+
+## CI and Release
+
+- **CI** (`.github/workflows/ci.yml`): on PR and push to `main`, `cargo fmt`, `clippy -D warnings`, real `postgres:16` service, `cargo test --workspace`, `cargo build --release`.
+- **Security** (`.github/workflows/security.yml`): on PR and weekly schedule, `cargo audit`, CodeQL `rust` (`security-and-quality`), Dependabot for `cargo` and `github-actions`. Secret scanning and push protection are repository settings.
+- **Release** (`.github/workflows/release.yml`): on `push: tags v*.*.*` or published Release. Builds from the tagged commit, runs tests, records `GITHUB_SHA`, produces `SHA256SUMS.txt`, builds with BuildKit via `buildx`, starts the container and curls `/health` before any push, then pushes to `ghcr.io/palmshed/tree` (`:x.y.z`, `:x.y`, `:x`, `:stable`, `:latest` only for stable semver) and attaches `tree-server`, `tree`, checksums and commit SHA to the GitHub Release.
+
+Dependabot is configured in `.github/dependabot.yml` (weekly `cargo` and `github-actions`).
+
 ---
 
 ## Roadmap
 
-- [x] **Phase 0: Workspace & Repository Architecture** (Completed)
-- [x] **Phase 1: Git Foundation & PostgreSQL Metadata** (Completed & Verified)
-- [ ] **Phase 2: Trust & Boundary Enforcement** (Authentication, authorization enforcement at Git transport layer, repository isolation, request limits, failure recovery)
-- [ ] **Phase 3: Extended Transports & Observability** (SSH daemon via russh, Prometheus metrics, audit logging)
+- [x] **Phase 0: Workspace and Repository Architecture** (Completed)
+- [x] **Phase 1: Git Foundation and PostgreSQL Metadata** (Completed and Verified)
+- [x] **Phase 2: Trust and Boundary plus External Infrastructure** (Completed, 21/21 locally, BuildKit pipeline to GHCR, awaiting clean-runner verification)
+- [ ] **Phase 3: Extended Transports and Observability** (SSH daemon via `russh`, Prometheus metrics, audit log retention, webhook dispatcher)
 - [ ] *Deliberately Postponed*: Pull requests, issue trackers, CI/CD runners (preserving focus on core repository engine).
 
 ---
