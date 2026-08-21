@@ -1,0 +1,44 @@
+[package]
+name = "tree-integration-tests"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+path = "common.rs"
+
+[[test]]
+name = "test_repo_lifecycle"
+path = "test_repo_lifecycle.rs"
+
+[[test]]
+name = "test_permissions"
+path = "test_permissions.rs"
+
+[[test]]
+name = "test_smart_http_git"
+path = "test_smart_http_git.rs"
+
+[[test]]
+name = "test_concurrency"
+path = "test_concurrency.rs"
+
+[[test]]
+name = "test_postgres_storage"
+path = "test_postgres_storage.rs"
+
+[dependencies]
+tree-core = { workspace = true }
+tree-git = { workspace = true }
+tree-storage = { workspace = true }
+tree-server = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tempfile = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

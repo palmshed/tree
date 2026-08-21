@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tree-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: tree_db
+      POSTGRES_USER: tree
+      POSTGRES_PASSWORD: treepassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - tree_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tree -d tree_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    container_name: tree-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TREE_HOST: "0.0.0.0"
+      TREE_PORT: 8080
+      DATABASE_URL: "postgres://tree:treepassword@postgres:5432/tree_db"
+      TREE_DATA_DIR: "/var/lib/tree/git"
+      TREE_BASE_URL: "http://localhost:8080"
+    ports:
+      - "8080:8080"
+    volumes:
+      - tree_gitdata:/var/lib/tree/git
+
+volumes:
+  tree_pgdata:
+  tree_gitdata:

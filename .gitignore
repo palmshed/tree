@@ -1,0 +1,19 @@
+# Rust build artifacts
+target/
+**/*.rs.bk
+
+# Node / Web artifacts
+node_modules/
+web/.vite/
+
+# Local data & git bare stores
+data/
+*.db
+*.sqlite
+
+# OS and IDE files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo

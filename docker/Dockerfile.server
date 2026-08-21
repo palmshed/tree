@@ -1,0 +1,46 @@
+# Multi-stage Docker build for Tree Git Server (Linux-first)
+FROM rust:1.80-bullseye as builder
+
+WORKDIR /usr/src/tree
+
+# Install system dependencies (git, pkg-config, libssl-dev)
+RUN apt-get update && apt-get install -y git pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+
+# Copy workspace source
+COPY Cargo.toml Cargo.lock* ./
+COPY crates ./crates
+COPY apps ./apps
+COPY migrations ./migrations
+COPY web/dist ./web/dist
+
+# Build release binaries
+RUN cargo build --release --bin tree-server --bin tree
+
+# Runtime container
+FROM debian:bullseye-slim
+
+RUN apt-get update && apt-get install -y \
+    git \
+    ca-certificates \
+    libssl1.1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy binaries
+COPY --from=builder /usr/src/tree/target/release/tree-server /usr/local/bin/tree-server
+COPY --from=builder /usr/src/tree/target/release/tree /usr/local/bin/tree
+COPY --from=builder /usr/src/tree/migrations /app/migrations
+COPY --from=builder /usr/src/tree/web/dist /app/web/dist
+
+# Environment configuration
+ENV TREE_HOST="0.0.0.0"
+ENV TREE_PORT=8080
+ENV TREE_DATA_DIR="/var/lib/tree/git"
+
+# Storage directory
+RUN mkdir -p /var/lib/tree/git
+
+EXPOSE 8080
+
+CMD ["tree-server"]
