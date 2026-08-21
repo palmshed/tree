@@ -11,6 +11,17 @@ updates:
     commit-message:
       prefix: chore(deps)
       include: scope
+    ignore:
+      - dependency-name: rand
+        update-types: ["version-update:semver-major"]
+      - dependency-name: axum
+        update-types: ["version-update:semver-major"]
+      - dependency-name: tower-http
+        update-types: ["version-update:semver-major"]
+      - dependency-name: thiserror
+        update-types: ["version-update:semver-major"]
+      - dependency-name: reqwest
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: "/"
