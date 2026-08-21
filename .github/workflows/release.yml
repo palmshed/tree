@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: build, verify and publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: tree
+          POSTGRES_PASSWORD: treepassword
+          POSTGRES_DB: tree_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://tree:treepassword@localhost:5432/tree_db
+      RUST_BACKTRACE: "1"
+      CARGO_TERM_COLOR: always
+      REGISTRY: ghcr.io
+
+    steps:
+      - name: Checkout (tagged commit)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          save-if: ${{ github.event_name != 'pull_request' }}
+
+      # ── Tests before any publish ──────────────────────────────────────────
+      - name: Run tests (postgres service must be healthy)
+        run: cargo test --workspace --locked
+
+      # ── Release binaries ──────────────────────────────────────────────────
+      - name: Build release binaries
+        run: cargo build --release --locked
+
+      - name: Record commit SHA
+        run: |
+          echo "${GITHUB_SHA}" > COMMIT_SHA.txt
+          echo "Commit: ${GITHUB_SHA}"
+          echo "Ref: ${GITHUB_REF} (${GITHUB_REF_NAME})"
+          git log -1 --oneline
+
+      - name: Produce checksums and stage artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp target/release/tree-server dist/ 2>/dev/null || cp target/release/tree_server dist/tree-server
+          cp target/release/tree dist/ 2>/dev/null || echo "tree CLI binary not found at target/release/tree"
+          ls -lh dist/
+          (cd dist && sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          cp COMMIT_SHA.txt dist/
+          echo "Artifacts ready for ${GITHUB_REF_NAME:-${GITHUB_SHA::7}}"
+
+      # ── Docker BuildKit / buildx ──────────────────────────────────────────
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata (tags from release version)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=stable
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-') }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.created={{commitDate 'YYYY-MM-DDTHH:mm:ssZ'}}
+
+      # Build once with --load for local verification (no push yet).
+      - name: Build image (load for verification, BuildKit)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.server
+          platforms: linux/amd64
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      # Do not claim production-ready until the container is started and verified.
+      - name: Verify container starts and serves /health
+        run: |
+          set -euo pipefail
+          IMAGE=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "Verifying image: ${IMAGE}"
+          docker run -d --name tree-verify -p 18080:8080 \
+            -e TREE_HOST=0.0.0.0 \
+            -e TREE_PORT=8080 \
+            -e TREE_DATA_DIR=/tmp/tree-data \
+            "${IMAGE}"
+          # Wait for health (up to 30s)
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:18080/health >/dev/null 2>&1; then
+              echo "Health check passed on attempt ${i}"
+              curl -fsS http://127.0.0.1:18080/health | head -c 500
+              echo ""
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Health check failed after 30s"
+              docker logs tree-verify || true
+              docker rm -f tree-verify || true
+              exit 1
+            fi
+            sleep 1
+          done
+          docker logs tree-verify 2>&1 | tail -20 || true
+          docker rm -f tree-verify
+          echo "Container verification succeeded, safe to publish."
+
+      # Publish only after successful verification.
+      - name: Build and push image to GHCR (BuildKit)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./docker/Dockerfile.server
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Attach binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name || github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/tree-server
+            dist/tree
+            dist/SHA256SUMS.txt
+            dist/COMMIT_SHA.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

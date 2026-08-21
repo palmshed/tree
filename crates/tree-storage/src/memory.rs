@@ -51,11 +51,20 @@ impl Store for MemoryStore {
 
         let id = Uuid::new_v4();
         let now = Utc::now();
+        // The password field is a plaintext credential (same contract as PgStore);
+        // it is hashed here with the canonical Argon2id implementation before
+        // being stored.  When no password is provided, store an empty string:
+        // this user cannot authenticate via password until a credential is set.
+        let password_hash = req
+            .password
+            .as_deref()
+            .map(tree_core::auth::hash_password)
+            .unwrap_or_default();
         let user = User {
             id,
             username: req.username.clone(),
             email: req.email.clone(),
-            password_hash: "mock_hash".to_string(),
+            password_hash,
             display_name: req.display_name,
             created_at: now,
             updated_at: now,
@@ -170,7 +179,10 @@ impl Store for MemoryStore {
                 id: uid,
                 username: owner_name.to_string(),
                 email: format!("{}@tree.local", owner_name),
-                password_hash: "mock_hash".to_string(),
+                // Unparseable PHC placeholder: this implicitly-created owner has no
+                // credential set and therefore can never authenticate until a real
+                // Argon2id hash is stored.
+                password_hash: String::new(),
                 display_name: Some(owner_name.to_string()),
                 created_at: now,
                 updated_at: now,
@@ -250,7 +262,7 @@ impl Store for MemoryStore {
     async fn list_all_repos(&self) -> Result<Vec<Repository>> {
         let state = self.state.read();
         let mut repos: Vec<Repository> = state.repositories.values().cloned().collect();
-        repos.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        repos.sort_by_key(|r| std::cmp::Reverse(r.created_at));
         Ok(repos)
     }
 
@@ -326,7 +338,7 @@ impl Store for MemoryStore {
         let mut state = self.state.write();
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let perm_type = PermissionType::from_str(perm).map_err(|e| TreeError::BadRequest(e))?;
+        let perm_type = PermissionType::from_str(perm).map_err(TreeError::BadRequest)?;
         let username = user_id.and_then(|uid| state.users.get(&uid).map(|u| u.username.clone()));
 
         let permission = RepositoryPermission {

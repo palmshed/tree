@@ -128,10 +128,18 @@ mod tests {
     fn test_owner_full_access() {
         let owner = dummy_user("alice");
         let repo = dummy_repo(&owner, true);
-        assert!(PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Read).is_ok());
-        assert!(PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Write).is_ok());
-        assert!(PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Admin).is_ok());
-        assert!(PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Delete).is_ok());
+        assert!(
+            PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Read).is_ok()
+        );
+        assert!(
+            PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Write).is_ok()
+        );
+        assert!(
+            PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Admin).is_ok()
+        );
+        assert!(
+            PermissionEngine::check_permission(&repo, Some(&owner), None, Action::Delete).is_ok()
+        );
     }
 
     #[test]
@@ -149,8 +157,20 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        assert!(PermissionEngine::check_permission(&repo, Some(&bob), Some(&read_member), Action::Read).is_ok());
-        assert!(PermissionEngine::check_permission(&repo, Some(&bob), Some(&read_member), Action::Write).is_err());
+        assert!(PermissionEngine::check_permission(
+            &repo,
+            Some(&bob),
+            Some(&read_member),
+            Action::Read
+        )
+        .is_ok());
+        assert!(PermissionEngine::check_permission(
+            &repo,
+            Some(&bob),
+            Some(&read_member),
+            Action::Write
+        )
+        .is_err());
 
         let write_member = RepositoryMember {
             id: Uuid::new_v4(),
@@ -161,7 +181,19 @@ mod tests {
             created_at: Utc::now(),
         };
 
-        assert!(PermissionEngine::check_permission(&repo, Some(&bob), Some(&write_member), Action::Write).is_ok());
-        assert!(PermissionEngine::check_permission(&repo, Some(&bob), Some(&write_member), Action::Admin).is_err());
+        assert!(PermissionEngine::check_permission(
+            &repo,
+            Some(&bob),
+            Some(&write_member),
+            Action::Write
+        )
+        .is_ok());
+        assert!(PermissionEngine::check_permission(
+            &repo,
+            Some(&bob),
+            Some(&write_member),
+            Action::Admin
+        )
+        .is_err());
     }
 }

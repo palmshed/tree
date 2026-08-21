@@ -4,11 +4,15 @@ pub mod git_http;
 pub mod state;
 
 use api::*;
+use axum::extract::DefaultBodyLimit;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Router;
 use state::AppState;
+use std::time::Duration;
+use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 pub fn create_router(state: AppState) -> Router {
@@ -32,22 +36,13 @@ pub fn create_router(state: AppState) -> Router {
             "/repositories/:owner/:name/branches",
             get(list_branches_handler),
         )
-        .route(
-            "/repositories/:owner/:name/tags",
-            get(list_tags_handler),
-        )
+        .route("/repositories/:owner/:name/tags", get(list_tags_handler))
         .route(
             "/repositories/:owner/:name/commits",
             get(list_commits_handler),
         )
-        .route(
-            "/repositories/:owner/:name/tree",
-            get(get_tree_handler),
-        )
-        .route(
-            "/repositories/:owner/:name/blob",
-            get(get_blob_handler),
-        )
+        .route("/repositories/:owner/:name/tree", get(get_tree_handler))
+        .route("/repositories/:owner/:name/blob", get(get_blob_handler))
         .route(
             "/repositories/:owner/:name/permissions",
             post(set_permission_handler).get(list_permissions_handler),
@@ -87,14 +82,35 @@ pub fn create_router(state: AppState) -> Router {
         )
         // Git Smart HTTP transport endpoints
         .route("/:owner/:name/info/refs", get(git_http::info_refs_handler))
-        .route("/:owner/:name/git-upload-pack", post(git_http::upload_pack_handler))
-        .route("/:owner/:name/git-receive-pack", post(git_http::receive_pack_handler))
+        .route(
+            "/:owner/:name/git-upload-pack",
+            post(git_http::upload_pack_handler),
+        )
+        .route(
+            "/:owner/:name/git-receive-pack",
+            post(git_http::receive_pack_handler),
+        )
         // Static UI handler
         .route("/", get(serve_ui))
         .route("/ui", get(serve_ui))
         .route("/ui/*path", get(serve_ui))
-        .layer(CorsLayer::permissive())
-        .layer(TraceLayer::new_for_http())
+        .layer(
+            ServiceBuilder::new()
+                // Reject request bodies larger than 100 MiB.
+                // This prevents a single large git push from exhausting server memory.
+                .layer(DefaultBodyLimit::max(100 * 1024 * 1024))
+                .layer(TraceLayer::new_for_http())
+                // Drop connections that have not completed within 120 seconds.
+                // Covers stalled git clients that open a receive-pack stream but
+                // never send EOF.
+                //
+                // Cors and Timeout must sit below Trace here: both synthesize
+                // empty default responses (preflight / expiry), which requires
+                // the wrapped response body type to implement `Default`, which is
+                // true for axum's route bodies, not for trace/cors wrappers.
+                .layer(TimeoutLayer::new(Duration::from_secs(120)))
+                .layer(CorsLayer::permissive()),
+        )
         .with_state(state)
 }
 

@@ -42,7 +42,10 @@ async fn test_repository_lifecycle() {
 
     // 3. Get repository metadata & summary
     let get_resp = client
-        .get(format!("{}/repositories/alice/project-one", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/project-one",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -64,7 +67,10 @@ async fn test_repository_lifecycle() {
 
     // 5. Delete repository
     let del_resp = client
-        .delete(format!("{}/repositories/alice/project-one", server.base_url))
+        .delete(format!(
+            "{}/repositories/alice/project-one",
+            server.base_url
+        ))
         .basic_auth("alice", Some("password"))
         .send()
         .await
@@ -73,7 +79,10 @@ async fn test_repository_lifecycle() {
 
     // 6. Verify repository no longer exists
     let verify_resp = client
-        .get(format!("{}/repositories/alice/project-one", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/project-one",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();

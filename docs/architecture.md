@@ -1,4 +1,4 @@
-# Tree — Architecture Specification
+# Tree: Architecture Specification
 
 ## 1. System Overview
 

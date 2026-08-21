@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tracing::{error, info, warn};
 use tree_core::error::TreeError;
-use tree_core::models::{
-    CreateRepositoryRequest, CreateUserRequest, Role, SetPermissionRequest,
-};
+use tree_core::models::{CreateRepositoryRequest, CreateUserRequest, Role, SetPermissionRequest};
 use tree_core::permissions::{Action, PermissionEngine};
 use tree_git::{GitEngine, GitInspector};
 
@@ -112,7 +110,11 @@ pub async fn create_repository_handler(
         return (StatusCode::BAD_REQUEST, format!("Invalid owner: {}", e)).into_response();
     }
     if let Err(e) = GitEngine::sanitize_name(&payload.name) {
-        return (StatusCode::BAD_REQUEST, format!("Invalid repository name: {}", e)).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            format!("Invalid repository name: {}", e),
+        )
+            .into_response();
     }
 
     let default_branch = payload
@@ -121,10 +123,13 @@ pub async fn create_repository_handler(
         .unwrap_or_else(|| "main".to_string());
 
     // Compute disk path
-    let disk_path = match GitEngine::compute_disk_path(&state.config.data_dir, &owner_name, &payload.name) {
-        Ok(p) => p,
-        Err(e) => return (StatusCode::BAD_REQUEST, format!("Path error: {}", e)).into_response(),
-    };
+    let disk_path =
+        match GitEngine::compute_disk_path(&state.config.data_dir, &owner_name, &payload.name) {
+            Ok(p) => p,
+            Err(e) => {
+                return (StatusCode::BAD_REQUEST, format!("Path error: {}", e)).into_response()
+            }
+        };
 
     let disk_path_str = disk_path.to_string_lossy().to_string();
 
@@ -171,7 +176,10 @@ pub async fn create_repository_handler(
             .into_response();
     }
 
-    info!("Successfully created repository '{}/{}'", owner_name, repo.name);
+    info!(
+        "Successfully created repository '{}/{}'",
+        owner_name, repo.name
+    );
     (StatusCode::CREATED, Json(repo)).into_response()
 }
 
@@ -184,7 +192,13 @@ pub async fn get_repository_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -194,14 +208,20 @@ pub async fn get_repository_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let disk_path = PathBuf::from(&repo.disk_path);
     match GitEngine::get_repository_summary(&disk_path, &repo, &state.config.base_url).await {
         Ok(summary) => Json(summary).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Summary error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Summary error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -214,7 +234,13 @@ pub async fn delete_repository_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -224,12 +250,18 @@ pub async fn delete_repository_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Delete) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Delete)
+    {
         // If unauthenticated or forbidden
         if user.is_none() {
             // For simple CLI testing if no user is configured, let's allow if user matches owner_name
             // Or return forbidden
-            return (StatusCode::UNAUTHORIZED, "Authentication required to delete repository").into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                "Authentication required to delete repository",
+            )
+                .into_response();
         }
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
@@ -238,12 +270,19 @@ pub async fn delete_repository_handler(
 
     // Delete DB record
     if let Err(e) = state.store.delete_repo(&owner, clean_name).await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Delete error: {}", e)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Delete error: {}", e),
+        )
+            .into_response();
     }
 
     // Delete disk storage
     if let Err(e) = GitEngine::delete_repository(&disk_path).await {
-        warn!("Failed to delete repository from disk {:?}: {}", disk_path, e);
+        warn!(
+            "Failed to delete repository from disk {:?}: {}",
+            disk_path, e
+        );
     }
 
     (StatusCode::OK, Json(serde_json::json!({ "deleted": true }))).into_response()
@@ -258,7 +297,13 @@ pub async fn list_branches_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -268,14 +313,20 @@ pub async fn list_branches_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let disk_path = PathBuf::from(&repo.disk_path);
     match GitInspector::list_branches(&disk_path, &repo.default_branch).await {
         Ok(branches) => Json(branches).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -288,7 +339,13 @@ pub async fn list_tags_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -298,14 +355,20 @@ pub async fn list_tags_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let disk_path = PathBuf::from(&repo.disk_path);
     match GitInspector::list_tags(&disk_path).await {
         Ok(tags) => Json(tags).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -319,7 +382,13 @@ pub async fn list_commits_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -329,7 +398,9 @@ pub async fn list_commits_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
@@ -340,7 +411,11 @@ pub async fn list_commits_handler(
 
     match GitInspector::list_commits(&disk_path, Some(rev), limit, offset).await {
         Ok(commits) => Json(commits).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -354,7 +429,13 @@ pub async fn get_tree_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -364,7 +445,9 @@ pub async fn get_tree_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
@@ -373,7 +456,11 @@ pub async fn get_tree_handler(
 
     match GitInspector::get_tree(&disk_path, Some(rev), query.path.as_deref()).await {
         Ok(entries) => Json(entries).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -387,7 +474,13 @@ pub async fn get_blob_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -397,7 +490,9 @@ pub async fn get_blob_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
@@ -407,7 +502,11 @@ pub async fn get_blob_handler(
     match GitInspector::get_blob(&disk_path, Some(rev), &query.path).await {
         Ok(Some(blob)) => Json(blob).into_response(),
         Ok(None) => (StatusCode::NOT_FOUND, "File not found").into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -421,7 +520,13 @@ pub async fn set_permission_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let auth_user = extract_authenticated_user(&headers, &state.store).await;
@@ -432,14 +537,31 @@ pub async fn set_permission_handler(
     };
 
     // Only Admin or Owner can set permissions
-    if let Err(e) = PermissionEngine::check_permission(&repo, auth_user.as_ref(), member.as_ref(), Action::Admin) {
+    if let Err(e) = PermissionEngine::check_permission(
+        &repo,
+        auth_user.as_ref(),
+        member.as_ref(),
+        Action::Admin,
+    ) {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let target_user = match state.store.get_user_by_username(&payload.username).await {
         Ok(Some(u)) => u,
-        Ok(None) => return (StatusCode::NOT_FOUND, format!("User '{}' not found", payload.username)).into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Ok(None) => {
+            return (
+                StatusCode::NOT_FOUND,
+                format!("User '{}' not found", payload.username),
+            )
+                .into_response()
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let role = match payload.permission.to_lowercase().as_str() {
@@ -447,12 +569,22 @@ pub async fn set_permission_handler(
         "write" => Role::Write,
         "admin" => Role::Admin,
         "owner" => Role::Owner,
-        other => return (StatusCode::BAD_REQUEST, format!("Invalid role '{}'", other)).into_response(),
+        other => {
+            return (StatusCode::BAD_REQUEST, format!("Invalid role '{}'", other)).into_response()
+        }
     };
 
-    match state.store.add_or_update_member(repo.id, target_user.id, role).await {
+    match state
+        .store
+        .add_or_update_member(repo.id, target_user.id, role)
+        .await
+    {
         Ok(m) => (StatusCode::OK, Json(m)).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to update permissions: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to update permissions: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -465,7 +597,13 @@ pub async fn list_permissions_handler(
     let repo = match state.store.get_repo(&owner, clean_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -475,12 +613,18 @@ pub async fn list_permissions_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     match state.store.list_members(repo.id).await {
         Ok(members) => Json(members).into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to list members: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to list members: {}", e),
+        )
+            .into_response(),
     }
 }

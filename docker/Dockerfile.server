@@ -1,46 +1,55 @@
-# Multi-stage Docker build for Tree Git Server (Linux-first)
-FROM rust:1.80-bullseye as builder
+# syntax=docker/dockerfile:1
+# Multi-stage production build for Tree (Rust → minimal runtime)
+# Pipeline: GitHub Actions → BuildKit/buildx → ghcr.io
 
+FROM rust:1-bookworm AS builder
 WORKDIR /usr/src/tree
 
-# Install system dependencies (git, pkg-config, libssl-dev)
-RUN apt-get update && apt-get install -y git pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
+# git is required to build (crate fetches) and is used at runtime via subprocesses
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 
-# Copy workspace source
+# Layer cache: manifests first, then full source
 COPY Cargo.toml Cargo.lock* ./
 COPY crates ./crates
 COPY apps ./apps
 COPY migrations ./migrations
 COPY web/dist ./web/dist
 
-# Build release binaries
-RUN cargo build --release --bin tree-server --bin tree
+# BuildKit cache mounts keep registry + git deps warm without baking `target/` into the image.
+# The compiled binaries are copied out explicitly, so the mount content does not need to persist.
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    cargo build --release --locked --bin tree-server --bin tree
 
-# Runtime container
-FROM debian:bullseye-slim
+# ── Minimal runtime ──────────────────────────────────────────────────────────
+FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     ca-certificates \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -u 10001 -m -d /home/tree -s /usr/sbin/nologin tree \
+    && mkdir -p /var/lib/tree/git /app && chown -R tree:tree /var/lib/tree /app
 
 WORKDIR /app
 
-# Copy binaries
 COPY --from=builder /usr/src/tree/target/release/tree-server /usr/local/bin/tree-server
 COPY --from=builder /usr/src/tree/target/release/tree /usr/local/bin/tree
 COPY --from=builder /usr/src/tree/migrations /app/migrations
 COPY --from=builder /usr/src/tree/web/dist /app/web/dist
 
-# Environment configuration
 ENV TREE_HOST="0.0.0.0"
 ENV TREE_PORT=8080
 ENV TREE_DATA_DIR="/var/lib/tree/git"
 
-# Storage directory
-RUN mkdir -p /var/lib/tree/git
-
 EXPOSE 8080
 
-CMD ["tree-server"]
+# Do not claim production-ready until verified: release workflow actually starts
+# the container and curls /health before pushing.
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 --start-period=5s \
+  CMD curl -fsS http://127.0.0.1:${TREE_PORT:-8080}/health || exit 1
+
+USER tree
+
+ENTRYPOINT ["tree-server"]

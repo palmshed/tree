@@ -344,3 +344,156 @@ As an experimental Phase 0/1 implementation, the following boundaries exist:
 - **Server Application**: [apps/tree-server](../apps/tree-server)
 - **CLI Application**: [apps/tree-cli](../apps/tree-cli)
 - **Web Frontend**: [web/](../web)
+
+---
+
+## 14. External Development Infrastructure (GitHub Actions, Phase 2)
+
+> **Goal**: `commit → verify → build → package → release`
+>
+> GitHub Actions is the *external* development infrastructure only. Tree's own future
+> CI/CD system (self-hosted runners, webhook dispatch) is a later project phase.
+
+### 14.1 Workflow Architecture
+
+```
+              .github/workflows/
+              ├── ci.yml          PR + push to main
+              ├── security.yml    PR + weekly schedule
+              └── release.yml     tag v*.*.* / GitHub Release
+
+              commit ──▶ verify ──▶ build ──▶ package ──▶ release
+                          │          │          │
+                          │          │          └─ ghcr.io/palmshed/tree
+                          │          │              (BuildKit / buildx)
+                          │          └─ cargo build --release --locked
+                          └─ cargo fmt / clippy / test (pg16)
+```
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci.yml` | `pull_request` + `push: main` | Deterministic gate: fmt → clippy (`-D warnings`) → **real PostgreSQL 16** service → `cargo test --workspace` (21 tests) → `cargo build --release` |
+| `security.yml` | `pull_request` + `schedule: Mon 06:00 UTC` | `cargo audit` (RustSec), CodeQL `rust` (`security-and-quality`), plus Dependabot for `cargo` + `github-actions` (see `.github/dependabot.yml`); secret scanning / push protection are repo settings (`Settings → Code security`) |
+| `release.yml` | `push: tags v*.*.*` + `release: published` | Builds from the **tagged commit**, runs tests, records `GITHUB_SHA`, produces `SHA256SUMS.txt`, builds the container with **BuildKit via `docker/buildx`**, **starts the container and curls `/health` before any push**, then pushes to **GHCR** and attaches binaries to the GitHub Release |
+
+Concurrency: `ci` cancels in-progress runs per-ref; `release` is serialized per-tag and never cancels.
+
+### 14.2 `ci.yml` Detail
+
+```yaml
+services:
+  postgres:
+    image: postgres:16
+    env: { POSTGRES_USER: tree, POSTGRES_PASSWORD: treepassword, POSTGRES_DB: tree_db }
+    ports: [5432:5432]
+    options: --health-cmd pg_isready --health-interval 5s --health-retries 10
+env:
+  DATABASE_URL: postgres://tree:treepassword@localhost:5432/tree_db
+steps:
+  - actions/checkout@v4
+  - dtolnay/rust-toolchain@stable (rustfmt, clippy) + Swatinem/rust-cache@v2
+  - cargo fmt --all -- --check
+  - cargo clippy --workspace --all-targets -- -D warnings
+  - cargo test --workspace --locked        # real pg16, no skips, no weakens
+  - cargo build --release --locked
+```
+
+Verified baseline from a fresh checkout (with `DATABASE_URL` pointed at the service) is **21/21 tests passing** (4 `tree-core` + 4 `tree-git` + 6 `test_auth_enforcement` + 2 `test_concurrency` + 1 `test_permissions` + 1 `test_postgres_storage` + 2 `test_repo_lifecycle` + 1 `test_smart_http_git`; the original 15/15 pre-Phase-2 suite still passes, the 6 new auth-boundary tests are additive). CI fails if any step fails; no test is skipped to make it pass.
+
+### 14.3 `security.yml` Detail
+
+- **`cargo audit` job**: `taiki-e/install-action` installs `cargo-audit` pinned to the latest release, then `cargo audit` checks `Cargo.lock` against the RustSec advisory DB. Fails the PR on any `high`/`critical` advisory.
+- **`CodeQL` job**: `github/codeql-action/{init,autobuild,analyze}` with `languages: rust`, `queries: security-and-quality`. Results surface under `Security → Code scanning`. Permissions are minimal (`security-events: write`).
+- **Dependency freshness**: `.github/dependabot.yml` opens weekly PRs for `cargo` and `github-actions` (labels `dependencies`). This is the non-noisy, GitHub-native update check, no `cargo outdated` CI noise for a Rust/TS repo.
+- **Secret scanning**: GitHub's secret scanning + push protection are **repository settings**, not workflow YAML (documented here for completeness). Enable at `Settings → Code security → Secret scanning / Push protection`. No custom regex checks are added, avoids noise that does not apply to this Rust/TypeScript codebase.
+
+### 14.4 `release.yml` Detail: `commit → build → package → release`
+
+**Triggers**: `push: tags: v*.*.*` (e.g. `v0.1.0`) and `release: published`. Pushing a tag creates the Release; publishing a Release from the UI re-uses the same pipeline. Both build **from the tagged commit** (`actions/checkout` checks out `GITHUB_SHA` for that tag).
+
+**Pipeline**:
+
+```
+GitHub Actions (ubuntu-latest, postgres:16 service)
+      │
+      ├─ cargo test --workspace           ← must pass before any publish
+      ├─ cargo build --release --locked
+      ├─ record GITHUB_SHA → COMMIT_SHA.txt
+      ├─ sha256sum dist/* → SHA256SUMS.txt
+      │
+      ├─ docker/setup-buildx-action (BuildKit)
+      ├─ docker/login-action → ghcr.io (GITHUB_TOKEN)
+      ├─ docker/metadata-action → tags from release version
+      │      ghcr.io/palmshed/tree:1.2.3
+      │      ghcr.io/palmshed/tree:1.2
+      │      ghcr.io/palmshed/tree:1
+      │      ghcr.io/palmshed/tree:stable
+      │      ghcr.io/palmshed/tree:latest   ← only when tag has no '-' (no prerelease)
+      │   labels: org.opencontainers.image.revision=${GITHUB_SHA}
+      │
+      ├─ docker/build-push-action (load:true)  ← BuildKit, cache gha
+      ├─ VERIFY: docker run: rm, curl http://127.0.0.1:18080/health (30s)
+      │         └─ fails the job if health never returns 200; nothing is pushed
+      │
+      ├─ docker/build-push-action (push:true, provenance:true, sbom:true) → ghcr.io
+      └─ softprops/action-gh-release → attach dist/tree-server, dist/tree,
+                                      dist/SHA256SUMS.txt, dist/COMMIT_SHA.txt
+                                      to the GitHub Release (generate notes)
+```
+
+**Tagging policy**: images are tagged from the release version (`metadata-action` `type=semver`). `latest` is **not** published from arbitrary commits, only from a tagged release, and only when the tag is a stable semver (no `-rc`/`-beta` hyphen). `stable` is always published from a release and is the documented stable pointer.
+
+**Reproducibility**:
+
+- Build uses `--locked` (exact `Cargo.lock`).
+- Container build uses `docker/dockerfile:1` syntax + `cache-from/to: type=gha`.
+- Provenance and SBOM attestations are emitted (`provenance:true`, `sbom:true`).
+- `COMMIT_SHA.txt` and `SHA256SUMS.txt` are attached to the Release for out-of-band verification.
+
+### 14.5 Container Build
+
+`docker/Dockerfile.server` is a **multi-stage** production image:
+
+```
+# syntax=docker/dockerfile:1
+rust:1-bookworm  (builder)
+      │ cargo build --release --locked --bin tree-server --bin tree
+      │   (BuildKit cache mounts for registry + git)
+      ▼
+debian:bookworm-slim  (runtime, no toolchain)
+      git + ca-certificates + curl, non-root user `tree` (uid 10001),
+      /usr/local/bin/{tree-server,tree}, /app/{migrations,web/dist}
+      HEALTHCHECK curl /health, ENTRYPOINT ["tree-server"]
+```
+
+- The Rust toolchain and `target/` are **not** shipped in the final image.
+- `git` **is** shipped: `tree-server` shells out to `git upload-pack`/`receive-pack`.
+- `web/dist` is copied from the committed build artifact (no Node toolchain in the server image).
+
+`.dockerignore` excludes `target/`, `.git/`, `node_modules/`, `data/`, etc.
+
+### 14.6 What Is *Not* Built Yet
+
+Per the brief: no complex CD, no self-hosted runner fleet, no deployment to staging/prod, no `latest` promotion from `main`. Those belong to the later *Tree-native* CI/CD phase. GitHub Actions remains the external infrastructure only.
+
+### 14.7 Local Verification Status (2026-08-21, pre-push)
+
+CI/CD foundation is **complete locally** and **not yet part of `palmshed/tree`** because the changes have not been pushed. Local clean-runner equivalent verification on this darwin host:
+
+* `cargo fmt --all -- --check`: pass
+* `cargo clippy --workspace --all-targets -- -D warnings`: pass (0 warnings after fixing `redundant_closure`, `unnecessary_sort_by`, `print_literal`)
+* `cargo test --workspace --locked` with `DATABASE_URL=postgres://bniladridas@/tree_db?host=/tmp` (PostgreSQL 16 Homebrew, same major as CI service `postgres:16`): **21/21 passed** (4 `tree-core` + 4 `tree-git` + 6 `test_auth_enforcement` + 2 `test_concurrency` + 1 `test_permissions` + 1 `test_postgres_storage` + 2 `test_repo_lifecycle` + 1 `test_smart_http_git`; original 15/15 intact, 6 additive). `git diff --check` clean, no secrets committed (only `treepassword` test fixture in compose/workflows, no tokens/`.env`/certs), workflow YAML validates with `ruby -ryaml`.
+* `cargo build --release --locked`: pass
+* `docker` not available on this darwin runner, so BuildKit build and `/health` container verification is **deferred to the GitHub Actions clean runner** as designed in `release.yml` (load, curl `/health` 30s, then push with provenance and SBOM). This defers the final production-ready claim until the container is actually started and verified.
+
+Next step is a single clean commit and push:
+
+```
+ci: add GitHub Actions and BuildKit release pipeline
+```
+
+Once pushed, the real milestone is independent verification:
+
+> `palmshed/tree` → GitHub Actions → clean `ubuntu-latest` runner → PostgreSQL 16 service → `21/21` → release build → BuildKit container verification → `ghcr.io/palmshed/tree`
+
+That result, not the local run, is the evidence to be recorded here.

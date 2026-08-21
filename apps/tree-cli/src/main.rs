@@ -1,11 +1,22 @@
 use clap::{Parser, Subcommand};
 use reqwest::Client;
-use tree_core::models::{CreateRepositoryRequest, CreateUserRequest, Repository, RepositorySummary};
+use tree_core::models::{
+    CreateRepositoryRequest, CreateUserRequest, Repository, RepositorySummary,
+};
 
 #[derive(Parser, Debug)]
-#[command(name = "tree", about = "Tree - Minimalist Git Hosting Platform CLI", version = "0.1.0")]
+#[command(
+    name = "tree",
+    about = "Tree - Minimalist Git Hosting Platform CLI",
+    version = "0.1.0"
+)]
 struct Cli {
-    #[arg(long, global = true, default_value = "http://localhost:8080", env = "TREE_SERVER_URL")]
+    #[arg(
+        long,
+        global = true,
+        default_value = "http://localhost:8080",
+        env = "TREE_SERVER_URL"
+    )]
     server: String,
 
     #[arg(long, global = true, env = "TREE_AUTH_USER")]
@@ -117,8 +128,14 @@ async fn main() -> anyhow::Result<()> {
                 println!("✓ Repository created successfully!");
                 println!("  Name:        {}/{}", repo.owner_name, repo.name);
                 println!("  Default Ref: {}", repo.default_branch);
-                println!("  Visibility:  {}", if repo.is_private { "private" } else { "public" });
-                println!("  Clone URL:   {}/{}/{}.git", server_url, repo.owner_name, repo.name);
+                println!(
+                    "  Visibility:  {}",
+                    if repo.is_private { "private" } else { "public" }
+                );
+                println!(
+                    "  Clone URL:   {}/{}/{}.git",
+                    server_url, repo.owner_name, repo.name
+                );
             } else {
                 let err_text = resp.text().await?;
                 eprintln!("✗ Error creating repository: {}", err_text);
@@ -128,7 +145,8 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Delete { repo } => {
             let (owner, name) = parse_owner_repo(&repo);
-            let mut builder = client.delete(format!("{}/repositories/{}/{}", server_url, owner, name));
+            let mut builder =
+                client.delete(format!("{}/repositories/{}/{}", server_url, owner, name));
 
             if let (Some(u), Some(p)) = (&cli.auth_user, &cli.auth_pass) {
                 builder = builder.basic_auth(u, Some(p));
@@ -156,13 +174,22 @@ async fn main() -> anyhow::Result<()> {
                 if repos.is_empty() {
                     println!("No repositories found.");
                 } else {
-                    println!("{:<30} {:<10} {:<10} {}", "REPOSITORY", "BRANCH", "ACCESS", "DESCRIPTION");
-                    println!("{:-<70}", "");
+                    #[allow(clippy::print_literal)]
+                    {
+                        println!(
+                            "{:<30} {:<10} {:<10} {}",
+                            "REPOSITORY", "BRANCH", "ACCESS", "DESCRIPTION"
+                        );
+                    }
+                    println!("{}", "-".repeat(70));
                     for r in repos {
                         let access = if r.is_private { "private" } else { "public" };
                         let desc = r.description.as_deref().unwrap_or("-");
                         let full_name = format!("{}/{}", r.owner_name, r.name);
-                        println!("{:<30} {:<10} {:<10} {}", full_name, r.default_branch, access, desc);
+                        println!(
+                            "{:<30} {:<10} {:<10} {}",
+                            full_name, r.default_branch, access, desc
+                        );
                     }
                 }
             } else {
@@ -181,7 +208,10 @@ async fn main() -> anyhow::Result<()> {
 
             if resp.status().is_success() {
                 let summary: RepositorySummary = resp.json().await?;
-                println!("Repository: {}/{}", summary.repository.owner_name, summary.repository.name);
+                println!(
+                    "Repository: {}/{}",
+                    summary.repository.owner_name, summary.repository.name
+                );
                 println!("Default Branch: {}", summary.default_branch);
                 println!("Commits:        {}", summary.commits_count);
                 println!("Branches:       {}", summary.branches_count);

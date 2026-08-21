@@ -62,7 +62,10 @@ impl SmartHttpHandler {
     }
 
     /// Handles GET /:owner/:name.git/info/refs?service=...
-    pub async fn advertise_refs(repo_path: &Path, service: GitService) -> Result<(String, Vec<u8>)> {
+    pub async fn advertise_refs(
+        repo_path: &Path,
+        service: GitService,
+    ) -> Result<(String, Vec<u8>)> {
         if !repo_path.exists() {
             return Err(TreeError::Git(format!(
                 "Repository does not exist at {:?}",
@@ -156,7 +159,12 @@ impl SmartHttpHandler {
 
         if !status.success() {
             let err_msg = String::from_utf8_lossy(&stderr_buf);
-            error!("Git RPC {} failed with exit code {:?}: {}", service_cmd, status.code(), err_msg);
+            error!(
+                "Git RPC {} failed with exit code {:?}: {}",
+                service_cmd,
+                status.code(),
+                err_msg
+            );
             // Some git operations may have non-fatal warnings on stderr, but if status failed:
             if !stdout_buf.is_empty() {
                 // If stdout has pack protocol response, return it
@@ -191,7 +199,7 @@ mod tests {
     async fn test_advertise_refs_empty_repo() {
         let dir = tempdir().unwrap();
         let repo_path = dir.path().join("test.git");
-        
+
         // Init bare repo
         let out = Command::new("git")
             .arg("init")

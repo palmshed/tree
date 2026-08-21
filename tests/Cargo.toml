@@ -28,6 +28,10 @@ path = "test_concurrency.rs"
 name = "test_postgres_storage"
 path = "test_postgres_storage.rs"
 
+[[test]]
+name = "test_auth_enforcement"
+path = "test_auth_enforcement.rs"
+
 [dependencies]
 tree-core = { workspace = true }
 tree-git = { workspace = true }

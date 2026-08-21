@@ -44,7 +44,10 @@ async fn test_concurrent_repository_creation() {
 
     // Verify all 20 repositories were created and appear in listing
     let list_resp = client
-        .get(format!("{}/repositories?owner=concurrency_user", server.base_url))
+        .get(format!(
+            "{}/repositories?owner=concurrency_user",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -76,7 +79,10 @@ async fn test_concurrent_reads_and_writes() {
         let client_clone = client.clone();
         let handle = tokio::spawn(async move {
             let resp = client_clone
-                .get(format!("{}/repositories/shared_user/shared-repo", server_clone.base_url))
+                .get(format!(
+                    "{}/repositories/shared_user/shared-repo",
+                    server_clone.base_url
+                ))
                 .send()
                 .await
                 .unwrap();

@@ -47,9 +47,18 @@ impl GitInspector {
             if parts.len() >= 2 {
                 let name = parts[0].to_string();
                 let commit_id = parts[1].to_string();
-                let author = parts.get(2).filter(|s| !s.is_empty()).map(|s| s.to_string());
-                let date = parts.get(3).and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|dt| dt.with_timezone(&Utc));
-                let subject = parts.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string());
+                let author = parts
+                    .get(2)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                let date = parts
+                    .get(3)
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc));
+                let subject = parts
+                    .get(4)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
                 let is_default = name == default_branch;
 
                 branches.push(BranchInfo {
@@ -106,9 +115,18 @@ impl GitInspector {
             if parts.len() >= 2 {
                 let name = parts[0].to_string();
                 let commit_id = parts[1].to_string();
-                let tagger = parts.get(2).filter(|s| !s.is_empty()).map(|s| s.to_string());
-                let date = parts.get(3).and_then(|s| DateTime::parse_from_rfc3339(s).ok()).map(|dt| dt.with_timezone(&Utc));
-                let message = parts.get(4).filter(|s| !s.is_empty()).map(|s| s.to_string());
+                let tagger = parts
+                    .get(2)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
+                let date = parts
+                    .get(3)
+                    .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+                    .map(|dt| dt.with_timezone(&Utc));
+                let message = parts
+                    .get(4)
+                    .filter(|s| !s.is_empty())
+                    .map(|s| s.to_string());
 
                 tags.push(TagInfo {
                     name,

@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use bytes::Bytes;
 use serde::Deserialize;
 use std::path::PathBuf;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use tree_core::permissions::{Action, PermissionEngine};
 use tree_git::{GitEngine, GitService, SmartHttpHandler};
 
@@ -91,34 +91,51 @@ pub async fn info_refs_handler(
         return auth_challenge();
     }
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), required_action) {
-        warn!("Permission denied for info_refs on {}/{}: {}", owner, repo_name, e);
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), required_action)
+    {
+        warn!(
+            audit.event = "permission_denied",
+            audit.operation = ?required_action,
+            audit.repo = %format!("{}/{}", owner, repo_name),
+            audit.user = %user.as_ref().map(|u| u.username.as_str()).unwrap_or("<anonymous>"),
+            "Git transport permission denied: {}", e
+        );
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let disk_path = PathBuf::from(&repo.disk_path);
     if !GitEngine::is_valid_bare_repo(&disk_path) {
-        error!("Bare repository missing or corrupted on disk at {:?}", disk_path);
-        return (StatusCode::INTERNAL_SERVER_ERROR, "Repository corrupted on disk").into_response();
+        error!(
+            "Bare repository missing or corrupted on disk at {:?}",
+            disk_path
+        );
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Repository corrupted on disk",
+        )
+            .into_response();
     }
 
     match SmartHttpHandler::advertise_refs(&disk_path, service).await {
-        Ok((content_type, body)) => {
-            (
-                StatusCode::OK,
-                [
-                    (CONTENT_TYPE, content_type.as_str()),
-                    (CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
-                    (PRAGMA, "no-cache"),
-                    (EXPIRES, "0"),
-                ],
-                body,
-            )
-                .into_response()
-        }
+        Ok((content_type, body)) => (
+            StatusCode::OK,
+            [
+                (CONTENT_TYPE, content_type.as_str()),
+                (CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+                (PRAGMA, "no-cache"),
+                (EXPIRES, "0"),
+            ],
+            body,
+        )
+            .into_response(),
         Err(e) => {
             error!("Advertise refs failed: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, format!("Git error: {}", e)).into_response()
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Git error: {}", e),
+            )
+                .into_response()
         }
     }
 }
@@ -133,7 +150,13 @@ pub async fn upload_pack_handler(
     let repo = match state.store.get_repo(&owner, &repo_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -147,7 +170,9 @@ pub async fn upload_pack_handler(
         return auth_challenge();
     }
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Read)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
@@ -162,7 +187,11 @@ pub async fn upload_pack_handler(
             out,
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git RPC error: {}", e)).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git RPC error: {}", e),
+        )
+            .into_response(),
     }
 }
 
@@ -176,7 +205,13 @@ pub async fn receive_pack_handler(
     let repo = match state.store.get_repo(&owner, &repo_name).await {
         Ok(Some(r)) => r,
         Ok(None) => return (StatusCode::NOT_FOUND, "Repository not found").into_response(),
-        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, format!("Storage error: {}", e)).into_response(),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Storage error: {}", e),
+            )
+                .into_response()
+        }
     };
 
     let user = extract_authenticated_user(&headers, &state.store).await;
@@ -190,21 +225,35 @@ pub async fn receive_pack_handler(
         None
     };
 
-    if let Err(e) = PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Write) {
+    if let Err(e) =
+        PermissionEngine::check_permission(&repo, user.as_ref(), member.as_ref(), Action::Write)
+    {
         return (StatusCode::FORBIDDEN, format!("Permission denied: {}", e)).into_response();
     }
 
     let disk_path = PathBuf::from(&repo.disk_path);
     match SmartHttpHandler::execute_rpc(&disk_path, GitService::ReceivePack, body).await {
-        Ok((content_type, out)) => (
-            StatusCode::OK,
-            [
-                (CONTENT_TYPE, content_type.as_str()),
-                (CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
-            ],
-            out,
+        Ok((content_type, out)) => {
+            info!(
+                audit.event = "git_push",
+                audit.repo = %format!("{}/{}", owner, repo_name),
+                audit.user = %user.as_ref().map(|u| u.username.as_str()).unwrap_or("<unknown>"),
+                "Git push accepted"
+            );
+            (
+                StatusCode::OK,
+                [
+                    (CONTENT_TYPE, content_type.as_str()),
+                    (CACHE_CONTROL, "no-cache, no-store, must-revalidate"),
+                ],
+                out,
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Git RPC error: {}", e),
         )
             .into_response(),
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("Git RPC error: {}", e)).into_response(),
     }
 }

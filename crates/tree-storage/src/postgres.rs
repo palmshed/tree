@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{PgPool, Row};
 use std::str::FromStr;
 use tracing::info;
+use tree_core::auth::hash_password;
 use tree_core::error::{Result, TreeError};
 use tree_core::models::{
     CreateOrgRequest, CreateRepositoryRequest, CreateUserRequest, Organization, OwnerType,
@@ -12,13 +12,6 @@ use tree_core::models::{
 };
 use tree_core::store::Store;
 use uuid::Uuid;
-
-pub fn hash_password(password: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"tree_salt_");
-    hasher.update(password.as_bytes());
-    hex::encode(hasher.finalize())
-}
 
 #[derive(Clone)]
 pub struct PgStore {
@@ -285,9 +278,7 @@ impl Store for PgStore {
         let id = Uuid::new_v4();
         let now = Utc::now();
         let is_private = req.is_private.unwrap_or(false);
-        let default_branch = req
-            .default_branch
-            .unwrap_or_else(|| "main".to_string());
+        let default_branch = req.default_branch.unwrap_or_else(|| "main".to_string());
 
         let row = sqlx::query(
             r#"
@@ -321,14 +312,11 @@ impl Store for PgStore {
         })?;
 
         let owner_type_str: String = row.get("owner_type");
-        let parsed_owner_type = OwnerType::from_str(&owner_type_str)
-            .unwrap_or(OwnerType::User);
+        let parsed_owner_type = OwnerType::from_str(&owner_type_str).unwrap_or(OwnerType::User);
 
         // Add owner as repository member with Owner role
         if parsed_owner_type == OwnerType::User {
-            let _ = self
-                .add_or_update_member(id, owner_id, Role::Owner)
-                .await;
+            let _ = self.add_or_update_member(id, owner_id, Role::Owner).await;
         }
 
         Ok(Repository {
@@ -612,8 +600,7 @@ impl Store for PgStore {
     ) -> Result<RepositoryPermission> {
         let id = Uuid::new_v4();
         let now = Utc::now();
-        let perm_type = PermissionType::from_str(perm)
-            .map_err(|e| TreeError::BadRequest(e))?;
+        let perm_type = PermissionType::from_str(perm).map_err(TreeError::BadRequest)?;
 
         let row = sqlx::query(
             r#"
@@ -667,7 +654,8 @@ impl Store for PgStore {
                     repository_id: r.get("repository_id"),
                     user_id: r.get("user_id"),
                     username: r.get("username"),
-                    permission_type: PermissionType::from_str(&perm_str).unwrap_or(PermissionType::Read),
+                    permission_type: PermissionType::from_str(&perm_str)
+                        .unwrap_or(PermissionType::Read),
                     granted_by: r.get("granted_by"),
                     created_at: r.get("created_at"),
                 }

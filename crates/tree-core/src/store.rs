@@ -21,7 +21,12 @@ pub trait Store: Send + Sync + 'static {
     async fn list_orgs(&self) -> Result<Vec<Organization>>;
 
     // Repository operations
-    async fn create_repo(&self, owner_name: &str, req: CreateRepositoryRequest, disk_path: &str) -> Result<Repository>;
+    async fn create_repo(
+        &self,
+        owner_name: &str,
+        req: CreateRepositoryRequest,
+        disk_path: &str,
+    ) -> Result<Repository>;
     async fn get_repo(&self, owner: &str, name: &str) -> Result<Option<Repository>>;
     async fn get_repo_by_id(&self, id: Uuid) -> Result<Option<Repository>>;
     async fn list_repos_by_owner(&self, owner: &str) -> Result<Vec<Repository>>;
@@ -29,11 +34,22 @@ pub trait Store: Send + Sync + 'static {
     async fn delete_repo(&self, owner: &str, name: &str) -> Result<()>;
 
     // Membership & Permissions
-    async fn add_or_update_member(&self, repo_id: Uuid, user_id: Uuid, role: Role) -> Result<RepositoryMember>;
+    async fn add_or_update_member(
+        &self,
+        repo_id: Uuid,
+        user_id: Uuid,
+        role: Role,
+    ) -> Result<RepositoryMember>;
     async fn get_member(&self, repo_id: Uuid, user_id: Uuid) -> Result<Option<RepositoryMember>>;
     async fn list_members(&self, repo_id: Uuid) -> Result<Vec<RepositoryMember>>;
     async fn remove_member(&self, repo_id: Uuid, user_id: Uuid) -> Result<()>;
 
-    async fn add_permission(&self, repo_id: Uuid, user_id: Option<Uuid>, perm: &str, granted_by: Option<Uuid>) -> Result<RepositoryPermission>;
+    async fn add_permission(
+        &self,
+        repo_id: Uuid,
+        user_id: Option<Uuid>,
+        perm: &str,
+        granted_by: Option<Uuid>,
+    ) -> Result<RepositoryPermission>;
     async fn list_permissions(&self, repo_id: Uuid) -> Result<Vec<RepositoryPermission>>;
 }

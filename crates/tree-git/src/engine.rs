@@ -120,9 +120,9 @@ impl GitEngine {
     pub async fn delete_repository(disk_path: &Path) -> Result<()> {
         if disk_path.exists() {
             info!("Removing repository from disk: {:?}", disk_path);
-            fs::remove_dir_all(disk_path)
-                .await
-                .map_err(|e| TreeError::Git(format!("Failed to remove repository directory: {}", e)))?;
+            fs::remove_dir_all(disk_path).await.map_err(|e| {
+                TreeError::Git(format!("Failed to remove repository directory: {}", e))
+            })?;
         }
         Ok(())
     }
@@ -186,7 +186,10 @@ mod tests {
     #[test]
     fn test_sanitize_name() {
         assert_eq!(GitEngine::sanitize_name("my-repo").unwrap(), "my-repo");
-        assert_eq!(GitEngine::sanitize_name("user_123.test").unwrap(), "user_123.test");
+        assert_eq!(
+            GitEngine::sanitize_name("user_123.test").unwrap(),
+            "user_123.test"
+        );
         assert!(GitEngine::sanitize_name("../bad").is_err());
         assert!(GitEngine::sanitize_name("foo/bar").is_err());
         assert!(GitEngine::sanitize_name("").is_err());

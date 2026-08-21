@@ -1,17 +1,26 @@
+//! Authentication utilities for the HTTP boundary.
+//!
+//! Password hashing lives in `tree_core::auth` (Argon2id, per-password
+//! random salt).  This module re-exports the canonical functions and
+//! provides Basic Auth extraction for the Git Smart HTTP transport.
+//! There is no `mock_hash` bypass; test environments must create users
+//! with real credentials via the normal store API.
+
+pub use tree_core::auth::{hash_password, verify_password};
+
 use axum::http::HeaderMap;
 use base64::Engine;
-use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tree_core::models::User;
 use tree_core::store::Store;
 
-pub fn hash_password(password: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(b"tree_salt_");
-    hasher.update(password.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
+/// Extract a verified `User` from HTTP Basic Auth credentials.
+///
+/// Returns `None` if:
+/// - No `Authorization` header is present.
+/// - The header cannot be decoded.
+/// - The username does not exist in the store.
+/// - The password does not match the stored Argon2id hash.
 pub async fn extract_authenticated_user(
     headers: &HeaderMap,
     store: &Arc<dyn Store>,
@@ -26,15 +35,13 @@ pub async fn extract_authenticated_user(
         .decode(encoded)
         .ok()?;
     let credentials = String::from_utf8(decoded_bytes).ok()?;
-    let mut split = credentials.splitn(2, ':');
-    let username = split.next()?;
-    let password = split.next().unwrap_or("");
+    let mut parts = credentials.splitn(2, ':');
+    let username = parts.next()?;
+    let password = parts.next().unwrap_or("");
 
     let user = store.get_user_by_username(username).await.ok()??;
-    let expected_hash = hash_password(password);
 
-    // If password hash matches or if user was created with mock_hash
-    if user.password_hash == expected_hash || user.password_hash == "mock_hash" {
+    if verify_password(password, &user.password_hash) {
         Some(user)
     } else {
         None

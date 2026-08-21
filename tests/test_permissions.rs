@@ -7,33 +7,13 @@ async fn test_permissions_matrix() {
     let server = TestServer::start().await;
     let client = Client::new();
 
-    // 1. Create users alice (owner) and bob (member)
-    let _ = client
-        .post(format!("{}/users", server.base_url))
-        .json(&json!({
-            "username": "alice",
-            "email": "alice@example.com",
-            "password": "alicepassword"
-        }))
-        .send()
-        .await
-        .unwrap();
-
-    let _ = client
-        .post(format!("{}/users", server.base_url))
-        .json(&json!({
-            "username": "bob",
-            "email": "bob@example.com",
-            "password": "bobpassword"
-        }))
-        .send()
-        .await
-        .unwrap();
+    // 1. Users alice (owner) and bob (member) are pre-created by TestServer
+    //    with real Argon2id credentials ("password" / "bobsecret").
 
     // 2. Alice creates a private repository
     let create_resp = client
         .post(format!("{}/repositories", server.base_url))
-        .basic_auth("alice", Some("alicepassword"))
+        .basic_auth("alice", Some("password"))
         .json(&json!({
             "owner": "alice",
             "name": "secret-project",
@@ -46,7 +26,10 @@ async fn test_permissions_matrix() {
 
     // 3. Anonymous user tries to access private repo -> 403 Forbidden
     let anon_resp = client
-        .get(format!("{}/repositories/alice/secret-project", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/secret-project",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -54,8 +37,11 @@ async fn test_permissions_matrix() {
 
     // 4. Bob tries to access private repo before permission -> 403 Forbidden
     let bob_resp = client
-        .get(format!("{}/repositories/alice/secret-project", server.base_url))
-        .basic_auth("bob", Some("bobpassword"))
+        .get(format!(
+            "{}/repositories/alice/secret-project",
+            server.base_url
+        ))
+        .basic_auth("bob", Some("bobsecret"))
         .send()
         .await
         .unwrap();
@@ -63,8 +49,11 @@ async fn test_permissions_matrix() {
 
     // 5. Alice grants Bob 'read' permission
     let perm_resp = client
-        .post(format!("{}/repositories/alice/secret-project/permissions", server.base_url))
-        .basic_auth("alice", Some("alicepassword"))
+        .post(format!(
+            "{}/repositories/alice/secret-project/permissions",
+            server.base_url
+        ))
+        .basic_auth("alice", Some("password"))
         .json(&json!({
             "username": "bob",
             "permission": "read"
@@ -76,8 +65,11 @@ async fn test_permissions_matrix() {
 
     // 6. Now Bob can view repository metadata
     let bob_view_resp = client
-        .get(format!("{}/repositories/alice/secret-project", server.base_url))
-        .basic_auth("bob", Some("bobpassword"))
+        .get(format!(
+            "{}/repositories/alice/secret-project",
+            server.base_url
+        ))
+        .basic_auth("bob", Some("bobsecret"))
         .send()
         .await
         .unwrap();
@@ -85,8 +77,11 @@ async fn test_permissions_matrix() {
 
     // 7. List permissions
     let list_perm_resp = client
-        .get(format!("{}/repositories/alice/secret-project/permissions", server.base_url))
-        .basic_auth("alice", Some("alicepassword"))
+        .get(format!(
+            "{}/repositories/alice/secret-project/permissions",
+            server.base_url
+        ))
+        .basic_auth("alice", Some("password"))
         .send()
         .await
         .unwrap();

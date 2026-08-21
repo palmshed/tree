@@ -1,0 +1,13 @@
+target
+.git
+.gitignore
+node_modules
+web/.vite
+web/node_modules
+data
+*.db
+*.sqlite
+.DS_Store
+.vscode
+.idea
+docs

@@ -60,7 +60,11 @@ async fn test_git_end_to_end_smart_http() {
         .await;
 
     let readme_path = repo_dir1.join("README.md");
-    std::fs::write(&readme_path, "# Tree Project\n\nQuiet, lightweight Git hosting.").unwrap();
+    std::fs::write(
+        &readme_path,
+        "# Tree Project\n\nQuiet, lightweight Git hosting.",
+    )
+    .unwrap();
 
     let add_status = Command::new("git")
         .current_dir(&repo_dir1)
@@ -114,22 +118,34 @@ async fn test_git_end_to_end_smart_http() {
     assert_eq!(summary.branches_count, 1);
     assert_eq!(summary.tags_count, 1);
     assert_eq!(summary.commits_count, 1);
-    assert!(summary.readme_content.unwrap().contains("Quiet, lightweight Git hosting"));
+    assert!(summary
+        .readme_content
+        .unwrap()
+        .contains("Quiet, lightweight Git hosting"));
 
     // Verify branches endpoint
     let branches_resp = client
-        .get(format!("{}/repositories/alice/my-project/branches", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/my-project/branches",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
     let branches: Vec<BranchInfo> = branches_resp.json().await.unwrap();
     assert_eq!(branches.len(), 1);
     assert_eq!(branches[0].name, "main");
-    assert_eq!(branches[0].commit_message.as_deref(), Some("initial commit: add README"));
+    assert_eq!(
+        branches[0].commit_message.as_deref(),
+        Some("initial commit: add README")
+    );
 
     // Verify tags endpoint
     let tags_resp = client
-        .get(format!("{}/repositories/alice/my-project/tags", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/my-project/tags",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -139,7 +155,10 @@ async fn test_git_end_to_end_smart_http() {
 
     // Verify commits endpoint
     let commits_resp = client
-        .get(format!("{}/repositories/alice/my-project/commits", server.base_url))
+        .get(format!(
+            "{}/repositories/alice/my-project/commits",
+            server.base_url
+        ))
         .send()
         .await
         .unwrap();
@@ -162,7 +181,10 @@ async fn test_git_end_to_end_smart_http() {
 
     // 7. Verification: Second clone must contain the pushed README.md with exact content
     let clone2_readme = repo_dir2.join("README.md");
-    assert!(clone2_readme.exists(), "Pushed README.md must exist in second clone");
+    assert!(
+        clone2_readme.exists(),
+        "Pushed README.md must exist in second clone"
+    );
     let content = std::fs::read_to_string(&clone2_readme).unwrap();
     assert_eq!(content, "# Tree Project\n\nQuiet, lightweight Git hosting.");
 

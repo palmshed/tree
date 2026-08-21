@@ -26,11 +26,11 @@ impl Default for ServerConfig {
             .and_then(|p| p.parse().ok())
             .unwrap_or(8080);
 
-        let base_url = std::env::var("TREE_BASE_URL")
-            .unwrap_or_else(|_| format!("http://localhost:{}", port));
+        let base_url =
+            std::env::var("TREE_BASE_URL").unwrap_or_else(|_| format!("http://localhost:{}", port));
 
-        let default_owner = std::env::var("TREE_DEFAULT_OWNER")
-            .unwrap_or_else(|_| "user".to_string());
+        let default_owner =
+            std::env::var("TREE_DEFAULT_OWNER").unwrap_or_else(|_| "user".to_string());
 
         Self {
             host,
