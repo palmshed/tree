@@ -42,7 +42,7 @@ hex = "0.4"
 base64 = "0.22"
 regex = "1.10"
 argon2 = "0.5"
-rand = { version = "0.8", features = ["std"] }
+rand = { version = "0.10", features = ["std"] }
 
 # Workspace crates
 tree-core = { path = "crates/tree-core" }
