@@ -112,7 +112,7 @@ jobs:
 
       # Build once with --load for local verification (no push yet).
       - name: Build image (load for verification, BuildKit)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./docker/Dockerfile.server
@@ -157,7 +157,7 @@ jobs:
 
       # Publish only after successful verification.
       - name: Build and push image to GHCR (BuildKit)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./docker/Dockerfile.server
