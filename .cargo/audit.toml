@@ -1,0 +1,2 @@
+[advisories]
+ignore = ["RUSTSEC-2023-0071"] # rsa 0.9.10 via sqlx, Marvin Attack, no fixed upgrade is available, 5.9 medium, not exploitable in Tree
