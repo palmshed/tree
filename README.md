@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/palmshed/tree/main/.github/assets/thumbnail.png" alt="tree" width="100%">
+</p>
+
 # Tree
 
 ![Tree](https://raw.githubusercontent.com/palmshed/tree/main/.github/assets/tree.png)
